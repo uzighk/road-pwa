@@ -1,0 +1,59 @@
+{
+  "productName": "Road Companion",
+  "version": "3.5.0",
+  "identifier": "com.volpestudio.road-companion",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:8000",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Road Companion — Volpe Studio",
+        "width": 420,
+        "height": 760,
+        "minWidth": 320,
+        "minHeight": 500,
+        "maxWidth": 600,
+        "maxHeight": 1000,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "alwaysOnTop": true,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    },
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://raw.githubusercontent.com/uzighk/roadmap-releases/main/{{target}}-{{arch}}.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3RTIyQjNBRDYxQTZFOTMKUldTVGJocldPaXZpdDJHK3cyeTE2NFUzS0h1VzQ3MHh2c1g1YTV1eTJEa0VTeG5DclBZQmVuTnYK"
+    }
+  }
+}

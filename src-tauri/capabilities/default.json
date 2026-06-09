@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for Roadmap",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:default",
+    "updater:default",
+    "process:default"
+  ]
+}
