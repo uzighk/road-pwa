@@ -1,4 +1,4 @@
-import{r as y}from"./animation-vendor-BURNoh4v.js";/**
+import{r as y}from"./animation-vendor-CH9G4tWY.js";/**
  * @license lucide-react v0.344.0 - ISC
  *
  * This source code is licensed under the ISC license.
