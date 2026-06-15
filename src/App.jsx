@@ -1529,8 +1529,14 @@ function App() {
         body: JSON.stringify({ texto })
       })
       if (!res.ok) throw new Error()
-      // WebSocket vai adicionar a subtarefa via 'subtask:created'
-      // Não adicionar localmente para evitar duplicação
+      const newSub = await res.json()
+      // Adicionar com ID real da API (WebSocket pode não estar conectado)
+      setTarefas(prev => prev.map(t => {
+        if (t.id !== taskId) return t
+        // Evitar duplicata se WS já adicionou
+        if (t.subtarefas?.find(s => s.id === newSub.id)) return t
+        return { ...t, subtarefas: [...(t.subtarefas || []), { id: newSub.id, texto: newSub.texto, concluida: false }] }
+      }))
     } catch (err) {
       // Fallback local (só quando API falha)
       setTarefas(prev => prev.map(t =>
