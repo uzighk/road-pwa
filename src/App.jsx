@@ -2731,8 +2731,8 @@ function App() {
       <AnimatePresence>
         {editingProject && (
           <>
-            <motion.div className="bottom-sheet-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeEditProject} style={{ zIndex: 250 }} />
-            <motion.div className="bottom-sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} style={{ maxHeight: '85vh', overflowY: 'auto', zIndex: 251 }}>
+            <motion.div className="bottom-sheet-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeEditProject} style={{ zIndex: 2000 }} />
+            <motion.div className="bottom-sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} style={{ maxHeight: '85vh', overflowY: 'auto', zIndex: 2001 }}>
               <div className="bottom-sheet-handle" />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'clamp(14px,2.5vw,20px)' }}>
                 <h2 style={{ fontSize: 'clamp(18px,3vw,22px)', fontWeight: 800, color: 'hsl(0,0%,95%)', display: 'flex', alignItems: 'center', gap: '8px' }}>

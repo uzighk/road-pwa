@@ -254,7 +254,7 @@ body {
   bottom: max(env(safe-area-inset-bottom, 0px), 16px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 100;
+  z-index: 1000;
   pointer-events: none;
 }
 
@@ -306,7 +306,7 @@ body {
 .bottom-sheet-overlay {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 2000;
   background: rgba(0, 0, 0, 0.5);
   animation: overlayIn 0.2s ease-out;
 }
@@ -316,7 +316,7 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 201;
+  z-index: 2001;
   max-height: 85vh;
   border-radius: clamp(16px, 3vw, 28px) clamp(16px, 3vw, 28px) 0 0;
   padding: clamp(16px, 3vw, 28px);
