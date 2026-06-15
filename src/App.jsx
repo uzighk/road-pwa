@@ -1,20 +1,22 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
-import { motion, AnimatePresence, Reorder } from 'framer-motion'
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import {
   Flame, Zap, Clipboard, CheckCircle, Circle,
   Trash2, Plus, Calendar, Save, Download, Upload,
   TrendingUp, Award, MoreHorizontal,
   ListTodo, RotateCcw, X, RefreshCw, Search,
   Timer, Play, Pause, Square,
-  StickyNote, CalendarClock, ChevronRight, ChevronDown,
+  Activity, CalendarClock, ChevronRight, ChevronDown,
   GripVertical, AlertTriangle, Keyboard, Pencil, Coffee,
-  Map, Route, Target, Flag, Milestone, CircleDot
+  Map, Route, Target, Flag, Milestone, CircleDot, Clock
 } from 'lucide-react'
 import { format, isPast, isToday, isTomorrow, differenceInDays } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import confetti from 'canvas-confetti'
-const APP_VERSION = '3.7.0'
+const APP_VERSION = '3.9.0'
 const APP_NAME = 'Road Checklist'
+const API_URL = 'https://api.road.centralraposa.com'
+const WS_URL = 'wss://api.road.centralraposa.com/ws'
 
 /* ═══════════════════════════════════════════
    POMODORO CONFIG
@@ -127,6 +129,29 @@ function TaskCard({
   const subProgress = subTotal ? tarefa.subtarefas.filter(s => s.concluida).length : 0
   const accentColor = tarefa.concluida ? 'hsl(140,60%,50%)' : getPrioridadeAccent(tarefa.prioridade)
 
+  // ── Drag Controls (long press to drag) ──
+  const dragControls = useDragControls()
+  const [isDragEnabled, setIsDragEnabled] = useState(false)
+  const longPressTimer = useRef(null)
+
+  const handlePointerDown = (e) => {
+    longPressTimer.current = setTimeout(() => {
+      setIsDragEnabled(true)
+      dragControls.start(e)
+      // Vibrate on mobile if supported
+      if (navigator.vibrate) navigator.vibrate(50)
+    }, 200)
+  }
+
+  const handlePointerUp = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+    // Reset drag state after a short delay
+    setTimeout(() => setIsDragEnabled(false), 100)
+  }
+
   // ── Pomodoro State (interno ao card) ──
   const [pomodoroActive, setPomodoroActive] = useState(false)
   const [pomodoroMode, setPomodoroMode] = useState('work') // 'work' | 'break'
@@ -208,18 +233,26 @@ function TaskCard({
 
   return (
     <Reorder.Item value={tarefa}
-      className={`card-surface ${tarefa.concluida ? 'card-completed' : ''} ${isExpanded ? 'card-expanded' : ''}`}
+      dragListener={false}
+      dragControls={dragControls}
+      className={`card-surface ${tarefa.concluida ? 'card-completed' : ''} ${isExpanded ? 'card-expanded' : ''} ${isDragEnabled ? 'dragging' : ''}`}
       style={{
-        borderRadius: 'clamp(16px,3vw,22px)', padding: 'clamp(20px,4vw,28px)', cursor: 'grab', listStyle: 'none',
+        borderRadius: 'clamp(16px,3vw,22px)', padding: 'clamp(20px,4vw,28px)', cursor: isDragEnabled ? 'grabbing' : 'default', listStyle: 'none',
         '--card-accent': accentColor,
         borderColor: deadline?.urgent && !tarefa.concluida ? `${deadline.color}33` : undefined,
+        touchAction: 'pan-y',
       }}
-      whileDrag={{ scale: 1.02, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
+      whileDrag={{ scale: 1.02, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 50 }}
     >
       {/* Top row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'clamp(10px,2vw,14px)' }}>
-        <div style={{ color: 'hsl(0,0%,20%)', cursor: 'grab', padding: '2px', marginTop: '2px', flexShrink: 0 }}>
-          <GripVertical size={14} />
+        <div
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          style={{ color: isDragEnabled ? 'hsl(24,100%,50%)' : 'hsl(0,0%,20%)', cursor: 'grab', padding: '6px', marginTop: '0px', flexShrink: 0, touchAction: 'none', transition: 'color 0.15s' }}>
+          <GripVertical size={16} />
         </div>
         <motion.button whileTap={{ scale: 0.85 }} onClick={(e) => { e.stopPropagation(); onToggle(tarefa.id) }}
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', flexShrink: 0, marginTop: '1px', display: 'flex' }}>
@@ -356,7 +389,7 @@ function TaskCard({
                   <button onClick={(e) => { e.stopPropagation(); onToggleSub(tarefa.id, sub.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', padding: 0 }}>
                     {sub.concluida ? <CheckCircle size={13} style={{ color: 'hsl(140,60%,50%)' }} /> : <Circle size={13} style={{ color: 'hsl(0,0%,28%)' }} />}
                   </button>
-                  <span style={{ fontSize: '12px', color: sub.concluida ? 'hsl(0,0%,35%)' : 'hsl(0,0%,65%)', textDecoration: sub.concluida ? 'line-through' : 'none', flex: 1 }}>{sub.titulo}</span>
+                  <span style={{ fontSize: '12px', color: sub.concluida ? 'hsl(0,0%,35%)' : 'hsl(0,0%,65%)', textDecoration: sub.concluida ? 'line-through' : 'none', flex: 1 }}>{sub.texto || sub.titulo}</span>
                   <button onClick={(e) => { e.stopPropagation(); onRemoveSub(tarefa.id, sub.id) }}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex', color: 'hsl(0,60%,55%)', opacity: 0.4, transition: 'opacity 0.15s' }}
                     onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.4'}>
@@ -387,7 +420,7 @@ function TaskCard({
                     <button onClick={(e) => { e.stopPropagation(); onToggleSub(tarefa.id, sub.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', padding: 0 }}>
                       {sub.concluida ? <CheckCircle size={15} style={{ color: 'hsl(140,60%,50%)' }} /> : <Circle size={15} style={{ color: 'hsl(0,0%,28%)' }} />}
                     </button>
-                    <span style={{ fontSize: '13px', color: sub.concluida ? 'hsl(0,0%,35%)' : 'hsl(0,0%,75%)', textDecoration: sub.concluida ? 'line-through' : 'none', flex: 1 }}>{sub.titulo}</span>
+                    <span style={{ fontSize: '13px', color: sub.concluida ? 'hsl(0,0%,35%)' : 'hsl(0,0%,75%)', textDecoration: sub.concluida ? 'line-through' : 'none', flex: 1 }}>{sub.texto || sub.titulo}</span>
                     <button onClick={(e) => { e.stopPropagation(); onRemoveSub(tarefa.id, sub.id) }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'hsl(0,60%,55%)', opacity: 0.5, transition: 'opacity 0.15s' }}
                       onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}>
@@ -430,8 +463,8 @@ const getProjectColor = (key) => PROJECT_COLORS.find(c => c.key === key)?.color 
    PROJECT CARD (card compacto clicável)
    ═══════════════════════════════════════════ */
 const ProjectCard = memo(function ProjectCard({ project, onClick }) {
-  const totalPhases = project.phases?.length || 0
-  const completedPhases = project.phases?.filter(p => p.completed).length || 0
+  const totalPhases = project.stages?.length || 0
+  const completedPhases = project.stages?.filter(s => s.status === 'completed').length || 0
   const progress = totalPhases ? Math.round((completedPhases / totalPhases) * 100) : 0
   const projectColor = getProjectColor(project.color)
   const statusInfo = PROJECT_STATUS[project.status] || PROJECT_STATUS.planning
@@ -584,8 +617,8 @@ const ProjectDetailView = memo(function ProjectDetailView({
   const projectColor = getProjectColor(project.color)
   const statusInfo = PROJECT_STATUS[project.status] || PROJECT_STATUS.planning
 
-  const totalPhases = project.phases?.length || 0
-  const completedPhases = project.phases?.filter(p => p.completed).length || 0
+  const totalPhases = project.stages?.length || 0
+  const completedPhases = project.stages?.filter(s => s.status === 'completed').length || 0
   const progress = totalPhases ? Math.round((completedPhases / totalPhases) * 100) : 0
 
   const handleAddPhase = () => {
@@ -824,7 +857,7 @@ const ProjectDetailView = memo(function ProjectDetailView({
 
           {/* Lista de fases */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {(project.phases || []).length === 0 ? (
+            {(project.stages || []).length === 0 ? (
               <div style={{
                 padding: '32px',
                 textAlign: 'center',
@@ -841,9 +874,9 @@ const ProjectDetailView = memo(function ProjectDetailView({
                 </p>
               </div>
             ) : (
-              project.phases.map((phase, index) => (
+              project.stages.map((stage, index) => (
                 <motion.div
-                  key={phase.id}
+                  key={stage.id}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.05 }}
@@ -858,7 +891,7 @@ const ProjectDetailView = memo(function ProjectDetailView({
                 >
                   <motion.button
                     whileTap={{ scale: 0.85 }}
-                    onClick={() => onTogglePhase(project.id, phase.id)}
+                    onClick={() => onTogglePhase(project.id, stage.id)}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -868,8 +901,10 @@ const ProjectDetailView = memo(function ProjectDetailView({
                       marginTop: '2px',
                     }}
                   >
-                    {phase.completed ? (
+                    {stage.status === 'completed' ? (
                       <CheckCircle size={20} style={{ color: 'hsl(140,60%,50%)' }} />
+                    ) : stage.status === 'current' ? (
+                      <CircleDot size={20} style={{ color: 'hsl(24,100%,50%)' }} />
                     ) : (
                       <Circle size={20} style={{ color: 'hsl(0,0%,30%)' }} />
                     )}
@@ -878,26 +913,21 @@ const ProjectDetailView = memo(function ProjectDetailView({
                     <p style={{
                       fontSize: '14px',
                       fontWeight: 600,
-                      color: phase.completed ? 'hsl(0,0%,45%)' : 'hsl(0,0%,88%)',
-                      textDecoration: phase.completed ? 'line-through' : 'none',
+                      color: stage.status === 'completed' ? 'hsl(0,0%,45%)' : 'hsl(0,0%,88%)',
+                      textDecoration: stage.status === 'completed' ? 'line-through' : 'none',
                       margin: 0,
                       lineHeight: 1.4,
                     }}>
-                      {phase.title}
+                      {stage.title}
                     </p>
-                    {phase.description && (
-                      <p style={{ fontSize: '12px', color: 'hsl(0,0%,45%)', marginTop: '4px', lineHeight: 1.5 }}>
-                        {phase.description}
-                      </p>
-                    )}
-                    {phase.completedAt && (
-                      <p style={{ fontSize: '10px', color: 'hsl(140,60%,45%)', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <CheckCircle size={10} /> Concluída em {format(new Date(phase.completedAt), "dd/MM 'às' HH:mm")}
+                    {stage.status === 'current' && (
+                      <p style={{ fontSize: '10px', color: 'hsl(24,100%,50%)', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <CircleDot size={10} /> Em andamento
                       </p>
                     )}
                   </div>
                   <button
-                    onClick={() => onRemovePhase(project.id, phase.id)}
+                    onClick={() => onRemovePhase(project.id, stage.id)}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -1018,15 +1048,9 @@ const ProjectDetailView = memo(function ProjectDetailView({
    ═══════════════════════════════════════════ */
 function App() {
   // ── Core State ──
-  const [tarefas, setTarefas] = useState(() => {
-    const salvas = localStorage.getItem('roadmap-tarefas-v5')
-    if (salvas) {
-      return JSON.parse(salvas).map(t => ({
-        subtarefas: [], categoria: 'geral', dataEntrega: null, ...t,
-      }))
-    }
-    return tarefasIniciais
-  })
+  const [tarefas, setTarefas] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [syncError, setSyncError] = useState(null)
   const [novaTarefa, setNovaTarefa] = useState('')
   const [novaDescricao, setNovaDescricao] = useState('')
   const [novaPrioridade, setNovaPrioridade] = useState('media')
@@ -1038,8 +1062,10 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
 
-  // ── Notes ──
-  const [notes, setNotes] = useState(() => localStorage.getItem('roadmap-notes-v1') || '')
+  // ── Token Monitor ──
+  const [monitorData, setMonitorData] = useState(null)
+  const [monitorLoading, setMonitorLoading] = useState(false)
+  const [monitorError, setMonitorError] = useState(null)
 
   // ── Edit Task ──
   const [editingTask, setEditingTask] = useState(null)
@@ -1055,10 +1081,7 @@ function App() {
   const [isHolding, setIsHolding] = useState(false)
 
   // ── Projects (modo roadmap) ──
-  const [projects, setProjects] = useState(() => {
-    const saved = localStorage.getItem('road-projects-v1')
-    return saved ? JSON.parse(saved) : []
-  })
+  const [projects, setProjects] = useState([])
 
   // ── Project View (projeto aberto) ──
   const [selectedProject, setSelectedProject] = useState(null)
@@ -1086,7 +1109,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('tarefas')
   const [showAddSheet, setShowAddSheet] = useState(false)
   const [showMoreSheet, setShowMoreSheet] = useState(false)
-  const [showNotesSheet, setShowNotesSheet] = useState(false)
+  // Monitor removido de sheet - agora é uma tab
   const [showShortcuts, setShowShortcuts] = useState(false)
 
   // ── Scroll (throttled) ──
@@ -1113,22 +1136,308 @@ function App() {
     return () => el.removeEventListener('scroll', handleScroll)
   }, [handleScroll, updateScroll])
 
-  // ── Persistence ──
+  // ── API Sync - Load initial data ──
   useEffect(() => {
-    localStorage.setItem('roadmap-tarefas-v5', JSON.stringify(tarefas))
+    const loadData = async () => {
+      setIsLoading(true)
+      setSyncError(null)
+      try {
+        const [tasksRes, projectsRes] = await Promise.all([
+          fetch(`${API_URL}/tasks`),
+          fetch(`${API_URL}/projects`)
+        ])
+        if (!tasksRes.ok || !projectsRes.ok) throw new Error('Erro ao carregar dados')
+        const tasksData = await tasksRes.json()
+        const projectsData = await projectsRes.json()
+        // Map API fields to app fields
+        setTarefas(tasksData.map(t => ({
+          id: t.id,
+          titulo: t.titulo,
+          descricao: t.descricao || '',
+          concluida: t.concluida,
+          prioridade: t.prioridade,
+          categoria: t.categoria,
+          dataAdicionada: t.data_adicionada,
+          dataEntrega: t.data_entrega,
+          totalWorkedSeconds: t.total_worked_seconds || 0,
+          subtarefas: (t.subtarefas || []).map(s => ({
+            id: s.id,
+            texto: s.texto,
+            concluida: s.concluida
+          }))
+        })))
+        setProjects(projectsData.map(p => ({
+          id: p.id,
+          name: p.name,
+          description: p.description || '',
+          status: p.status,
+          color: p.color,
+          stages: (p.stages || []).map(s => ({
+            id: s.id,
+            title: s.title,
+            status: s.status
+          }))
+        })))
+      } catch (err) {
+        setSyncError(err.message)
+        // Fallback to localStorage
+        const savedTasks = localStorage.getItem('roadmap-tarefas-v5')
+        if (savedTasks) setTarefas(JSON.parse(savedTasks))
+        const savedProjects = localStorage.getItem('road-projects-v1')
+        if (savedProjects) setProjects(JSON.parse(savedProjects))
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+
+  // ── WebSocket Real-time Sync ──
+  useEffect(() => {
+    let ws = null
+    let reconnectTimeout = null
+    let reconnectAttempts = 0
+    const maxReconnectAttempts = 10
+
+    const connect = () => {
+      ws = new WebSocket(WS_URL)
+
+      ws.onopen = () => {
+        console.log('[WS] Connected')
+        reconnectAttempts = 0
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const { event: eventType, data } = JSON.parse(event.data)
+
+          // Helper to map API task to app task
+          const mapTask = (t) => ({
+            id: t.id,
+            titulo: t.titulo,
+            descricao: t.descricao || '',
+            concluida: t.concluida,
+            prioridade: t.prioridade,
+            categoria: t.categoria,
+            dataAdicionada: t.data_adicionada,
+            dataEntrega: t.data_entrega,
+            totalWorkedSeconds: t.total_worked_seconds || 0,
+            subtarefas: (t.subtarefas || []).map(s => ({
+              id: s.id,
+              texto: s.texto,
+              concluida: s.concluida
+            }))
+          })
+
+          // Helper to map API project to app project
+          const mapProject = (p) => ({
+            id: p.id,
+            name: p.name,
+            description: p.description || '',
+            status: p.status,
+            color: p.color,
+            stages: (p.stages || []).map(s => ({
+              id: s.id,
+              title: s.title,
+              status: s.status
+            }))
+          })
+
+          switch (eventType) {
+            case 'task:created':
+              setTarefas(prev => {
+                if (prev.find(t => t.id === data.id)) return prev
+                return [...prev, mapTask(data)]
+              })
+              break
+
+            case 'task:updated':
+              setTarefas(prev => prev.map(t =>
+                t.id === data.id ? { ...t, ...mapTask({ ...data, subtarefas: t.subtarefas }) } : t
+              ))
+              break
+
+            case 'task:deleted':
+              setTarefas(prev => prev.filter(t => t.id !== data.id))
+              break
+
+            case 'tasks:reordered':
+              setTarefas(prev => {
+                const ordered = []
+                for (const id of data.orderedIds) {
+                  const task = prev.find(t => t.id === id)
+                  if (task) ordered.push(task)
+                }
+                return ordered
+              })
+              break
+
+            case 'subtask:created':
+              setTarefas(prev => prev.map(t => {
+                if (t.id !== data.taskId) return t
+                if (t.subtarefas.find(s => s.id === data.subtask.id)) return t
+                return {
+                  ...t,
+                  subtarefas: [...t.subtarefas, {
+                    id: data.subtask.id,
+                    texto: data.subtask.texto,
+                    concluida: data.subtask.concluida
+                  }]
+                }
+              }))
+              break
+
+            case 'subtask:updated':
+              setTarefas(prev => prev.map(t => ({
+                ...t,
+                subtarefas: t.subtarefas.map(s =>
+                  s.id === data.id ? { ...s, concluida: data.concluida } : s
+                )
+              })))
+              break
+
+            case 'subtask:deleted':
+              setTarefas(prev => prev.map(t => ({
+                ...t,
+                subtarefas: t.subtarefas.filter(s => s.id !== data.id)
+              })))
+              break
+
+            case 'project:created':
+              setProjects(prev => {
+                if (prev.find(p => p.id === data.id)) return prev
+                return [...prev, mapProject(data)]
+              })
+              break
+
+            case 'project:updated':
+              setProjects(prev => prev.map(p =>
+                p.id === data.id ? { ...p, ...mapProject({ ...data, stages: p.stages }) } : p
+              ))
+              break
+
+            case 'project:deleted':
+              setProjects(prev => prev.filter(p => p.id !== data.id))
+              break
+
+            case 'stage:created':
+              setProjects(prev => prev.map(p => {
+                if (p.id !== data.projectId) return p
+                if (p.stages.find(s => s.id === data.stage.id)) return p
+                return {
+                  ...p,
+                  stages: [...p.stages, {
+                    id: data.stage.id,
+                    title: data.stage.title,
+                    status: data.stage.status
+                  }]
+                }
+              }))
+              break
+
+            case 'stage:updated':
+              setProjects(prev => prev.map(p => ({
+                ...p,
+                stages: p.stages.map(s =>
+                  s.id === data.id ? { ...s, status: data.status } : s
+                )
+              })))
+              break
+
+            case 'stage:deleted':
+              setProjects(prev => prev.map(p => ({
+                ...p,
+                stages: p.stages.filter(s => s.id !== data.id)
+              })))
+              break
+
+            default:
+              console.log('[WS] Unknown event:', eventType)
+          }
+        } catch (err) {
+          console.error('[WS] Parse error:', err)
+        }
+      }
+
+      ws.onclose = () => {
+        console.log('[WS] Disconnected')
+        if (reconnectAttempts < maxReconnectAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
+          reconnectTimeout = setTimeout(() => {
+            reconnectAttempts++
+            console.log(`[WS] Reconnecting (attempt ${reconnectAttempts})...`)
+            connect()
+          }, delay)
+        }
+      }
+
+      ws.onerror = (err) => {
+        console.error('[WS] Error:', err)
+      }
+    }
+
+    connect()
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout)
+      if (ws) ws.close()
+    }
+  }, [])
+
+  // ── Backup to localStorage ──
+  useEffect(() => {
+    if (tarefas.length > 0) {
+      localStorage.setItem('roadmap-tarefas-v5', JSON.stringify(tarefas))
+    }
     setUltimoSalvo(new Date())
   }, [tarefas])
-
-  useEffect(() => {
-    localStorage.setItem('roadmap-notes-v1', notes)
-  }, [notes])
 
   useEffect(() => {
     localStorage.setItem('road-app-mode', appMode)
   }, [appMode])
 
+  // ── Monitor fetch (quando abre a sheet) ──
+  const fetchMonitorData = useCallback(async (retryCount = 0) => {
+    setMonitorLoading(true)
+    if (retryCount === 0) setMonitorError(null)
+    try {
+      const res = await fetch('https://monitor.centralraposa.com/usage', {
+        signal: AbortSignal.timeout(15000) // 15s timeout
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = await res.json()
+      if (json.error) {
+        // Se for erro de token, tentar novamente depois de um delay
+        if (json.error.includes('Token') && retryCount < 2) {
+          setTimeout(() => fetchMonitorData(retryCount + 1), 2000)
+          return
+        }
+        throw new Error(json.error === 'Token refresh failed' ? 'Sessão expirada no monitor. Tente novamente.' : json.error)
+      }
+      setMonitorData(json.data)
+      setMonitorError(null)
+    } catch (err) {
+      // Retry automático em caso de erro de rede (máx 2 tentativas)
+      if (retryCount < 2 && (err.name === 'TypeError' || err.name === 'AbortError')) {
+        setTimeout(() => fetchMonitorData(retryCount + 1), 2000)
+        return
+      }
+      setMonitorError(err.message === 'Failed to fetch' ? 'Não foi possível conectar ao monitor' : err.message)
+    } finally {
+      setMonitorLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
-    localStorage.setItem('road-projects-v1', JSON.stringify(projects))
+    if (activeTab === 'monitor') {
+      fetchMonitorData()
+    }
+  }, [activeTab, fetchMonitorData])
+
+  useEffect(() => {
+    if (projects.length > 0) {
+      localStorage.setItem('road-projects-v1', JSON.stringify(projects))
+    }
   }, [projects])
 
   // ── Notification permission ──
@@ -1136,6 +1445,19 @@ function App() {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission()
     }
+  }, [])
+
+  // ── Mobile keyboard detection ──
+  useEffect(() => {
+    if (typeof visualViewport === 'undefined') return
+
+    const handleResize = () => {
+      const keyboardVisible = visualViewport.height < window.innerHeight * 0.75
+      document.body.classList.toggle('keyboard-visible', keyboardVisible)
+    }
+
+    visualViewport.addEventListener('resize', handleResize)
+    return () => visualViewport.removeEventListener('resize', handleResize)
   }, [])
 
 
@@ -1163,56 +1485,113 @@ function App() {
   }, [])
 
   // ── Stable callbacks (don't break React.memo) ──
-  const toggleTarefa = useCallback((id) => {
-    setTarefas(prev => prev.map(t => {
-      if (t.id === id && !t.concluida) { criarConfetti(); return { ...t, concluida: true } }
-      if (t.id === id) return { ...t, concluida: false }
-      return t
-    }))
-  }, [criarConfetti])
+  const toggleTarefa = useCallback(async (id) => {
+    const tarefa = tarefas.find(t => t.id === id)
+    if (!tarefa) return
+    const newConcluida = !tarefa.concluida
+    // Optimistic update
+    setTarefas(prev => prev.map(t => t.id === id ? { ...t, concluida: newConcluida } : t))
+    if (newConcluida) criarConfetti()
+    // Sync with API
+    try {
+      await fetch(`${API_URL}/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ concluida: newConcluida })
+      })
+    } catch (err) { console.error('Sync error:', err) }
+  }, [tarefas, criarConfetti])
 
-  const removerTarefa = useCallback((id) => setTarefas(prev => prev.filter(t => t.id !== id)), [])
+  const removerTarefa = useCallback(async (id) => {
+    setTarefas(prev => prev.filter(t => t.id !== id))
+    try {
+      await fetch(`${API_URL}/tasks/${id}`, { method: 'DELETE' })
+    } catch (err) { console.error('Sync error:', err) }
+  }, [])
 
-  const atualizarDescricao = useCallback((id, novaDesc) => {
+  const atualizarDescricao = useCallback(async (id, novaDesc) => {
     setTarefas(prev => prev.map(t => t.id === id ? { ...t, descricao: novaDesc } : t))
+    try {
+      await fetch(`${API_URL}/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ descricao: novaDesc })
+      })
+    } catch (err) { console.error('Sync error:', err) }
   }, [])
 
-  const addSubtarefa = useCallback((taskId, titulo) => {
-    if (!titulo.trim()) return
+  const addSubtarefa = useCallback(async (taskId, texto) => {
+    if (!texto.trim()) return
+    try {
+      const res = await fetch(`${API_URL}/tasks/${taskId}/subtasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto })
+      })
+      if (!res.ok) throw new Error()
+      // WebSocket vai adicionar a subtarefa via 'subtask:created'
+      // Não adicionar localmente para evitar duplicação
+    } catch (err) {
+      // Fallback local (só quando API falha)
+      setTarefas(prev => prev.map(t =>
+        t.id === taskId
+          ? { ...t, subtarefas: [...(t.subtarefas || []), { id: Date.now(), texto, concluida: false }] }
+          : t
+      ))
+    }
+  }, [])
+
+  const toggleSubtarefa = useCallback(async (taskId, subId) => {
+    const tarefa = tarefas.find(t => t.id === taskId)
+    const sub = tarefa?.subtarefas?.find(s => s.id === subId)
+    if (!sub) return
+    const newConcluida = !sub.concluida
+    // Optimistic update
     setTarefas(prev => prev.map(t =>
       t.id === taskId
-        ? { ...t, subtarefas: [...(t.subtarefas || []), { id: Date.now(), titulo, concluida: false }] }
+        ? { ...t, subtarefas: t.subtarefas.map(s => s.id === subId ? { ...s, concluida: newConcluida } : s) }
         : t
     ))
-  }, [])
+    try {
+      await fetch(`${API_URL}/subtasks/${subId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ concluida: newConcluida })
+      })
+    } catch (err) { console.error('Sync error:', err) }
+  }, [tarefas])
 
-  const toggleSubtarefa = useCallback((taskId, subId) => {
-    setTarefas(prev => prev.map(t =>
-      t.id === taskId
-        ? { ...t, subtarefas: t.subtarefas.map(s => s.id === subId ? { ...s, concluida: !s.concluida } : s) }
-        : t
-    ))
-  }, [])
-
-  const removeSubtarefa = useCallback((taskId, subId) => {
+  const removeSubtarefa = useCallback(async (taskId, subId) => {
     setTarefas(prev => prev.map(t =>
       t.id === taskId
         ? { ...t, subtarefas: t.subtarefas.filter(s => s.id !== subId) }
         : t
     ))
+    try {
+      await fetch(`${API_URL}/subtasks/${subId}`, { method: 'DELETE' })
+    } catch (err) { console.error('Sync error:', err) }
   }, [])
 
   const expandTarefa = useCallback((id) => {
     setTarefaExpandida(prev => prev === id ? null : id)
   }, [])
 
-  const addWorkedTime = useCallback((taskId, seconds) => {
+  const addWorkedTime = useCallback(async (taskId, seconds) => {
+    const tarefa = tarefas.find(t => t.id === taskId)
+    const newTotal = (tarefa?.totalWorkedSeconds || 0) + seconds
     setTarefas(prev => prev.map(t =>
       t.id === taskId
-        ? { ...t, totalWorkedSeconds: (t.totalWorkedSeconds || 0) + seconds }
+        ? { ...t, totalWorkedSeconds: newTotal }
         : t
     ))
-  }, [])
+    try {
+      await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totalWorkedSeconds: newTotal })
+      })
+    } catch (err) { console.error('Sync error:', err) }
+  }, [tarefas])
 
   // ── Edit Task Actions ──
   const openEditSheet = useCallback((tarefa) => {
@@ -1233,21 +1612,26 @@ function App() {
     setEditDataEntrega('')
   }, [])
 
-  const salvarEdicao = useCallback(() => {
+  const salvarEdicao = useCallback(async () => {
     if (!editingTask || !editTitulo.trim()) return
+    const updates = {
+      titulo: editTitulo.trim(),
+      descricao: editDescricao,
+      prioridade: editPrioridade,
+      categoria: editCategoria,
+      dataEntrega: editDataEntrega || null
+    }
     setTarefas(prev => prev.map(t =>
-      t.id === editingTask.id
-        ? {
-            ...t,
-            titulo: editTitulo.trim(),
-            descricao: editDescricao,
-            prioridade: editPrioridade,
-            categoria: editCategoria,
-            dataEntrega: editDataEntrega || null
-          }
-        : t
+      t.id === editingTask.id ? { ...t, ...updates } : t
     ))
     closeEditSheet()
+    try {
+      await fetch(`${API_URL}/tasks/${editingTask.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      })
+    } catch (err) { console.error('Sync error:', err) }
   }, [editingTask, editTitulo, editDescricao, editPrioridade, editCategoria, editDataEntrega, closeEditSheet])
 
   // ── Hold to switch mode ──
@@ -1284,23 +1668,39 @@ function App() {
   }, [isHolding, appMode])
 
   // ── Project Actions ──
-  const addProject = useCallback(() => {
+  const addProject = useCallback(async () => {
     if (!newProjectName.trim()) return
-    const newProject = {
-      id: Date.now(),
-      name: newProjectName.trim(),
-      client: newProjectClient.trim(),
-      description: newProjectDescription.trim(),
-      color: newProjectColor,
-      status: 'planning',
-      startDate: newProjectStartDate || null,
-      dueDate: newProjectDueDate || null,
-      phases: [],
-      updates: [],
-      createdAt: new Date().toISOString(),
-      lastUpdate: new Date().toISOString(),
+    try {
+      const res = await fetch(`${API_URL}/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newProjectName.trim(),
+          description: newProjectDescription.trim(),
+          color: newProjectColor
+        })
+      })
+      if (!res.ok) throw new Error()
+      const newProject = await res.json()
+      setProjects(prev => [...prev, {
+        id: newProject.id,
+        name: newProject.name,
+        description: newProject.description || '',
+        status: newProject.status,
+        color: newProject.color,
+        stages: []
+      }])
+    } catch (err) {
+      // Fallback local
+      setProjects(prev => [...prev, {
+        id: Date.now(),
+        name: newProjectName.trim(),
+        description: newProjectDescription.trim(),
+        color: newProjectColor,
+        status: 'planning',
+        stages: []
+      }])
     }
-    setProjects(prev => [...prev, newProject])
     setNewProjectName('')
     setNewProjectClient('')
     setNewProjectDescription('')
@@ -1310,71 +1710,65 @@ function App() {
     setShowAddProjectSheet(false)
   }, [newProjectName, newProjectClient, newProjectDescription, newProjectColor, newProjectStartDate, newProjectDueDate])
 
-  const addPhaseToProject = useCallback((projectId, phaseTitle) => {
+  const addPhaseToProject = useCallback(async (projectId, phaseTitle) => {
     if (!phaseTitle.trim()) return
-    setProjects(prev => prev.map(project =>
-      project.id === projectId
-        ? {
-            ...project,
-            phases: [...(project.phases || []), {
-              id: Date.now(),
-              title: phaseTitle.trim(),
-              completed: false,
-              createdAt: new Date().toISOString(),
-            }],
-            lastUpdate: new Date().toISOString(),
-          }
+    try {
+      const res = await fetch(`${API_URL}/projects/${projectId}/stages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: phaseTitle.trim() })
+      })
+      if (!res.ok) throw new Error()
+      const newStage = await res.json()
+      const updateFn = (project) => project.id === projectId
+        ? { ...project, stages: [...(project.stages || []), { id: newStage.id, title: newStage.title, status: 'pending' }] }
         : project
-    ))
-    // Atualizar selectedProject se estiver aberto
-    setSelectedProject(prev => prev?.id === projectId ? {
-      ...prev,
-      phases: [...(prev.phases || []), {
-        id: Date.now(),
-        title: phaseTitle.trim(),
-        completed: false,
-        createdAt: new Date().toISOString(),
-      }],
-      lastUpdate: new Date().toISOString(),
-    } : prev)
+      setProjects(prev => prev.map(updateFn))
+      setSelectedProject(prev => prev ? updateFn(prev) : prev)
+    } catch (err) {
+      // Fallback local
+      const newStage = { id: Date.now(), title: phaseTitle.trim(), status: 'pending' }
+      const updateFn = (project) => project.id === projectId
+        ? { ...project, stages: [...(project.stages || []), newStage] }
+        : project
+      setProjects(prev => prev.map(updateFn))
+      setSelectedProject(prev => prev ? updateFn(prev) : prev)
+    }
   }, [])
 
-  const toggleProjectPhase = useCallback((projectId, phaseId) => {
-    const updateProject = (project) => {
-      if (project.id !== projectId) return project
-      const updatedPhases = project.phases.map(phase =>
-        phase.id === phaseId
-          ? {
-              ...phase,
-              completed: !phase.completed,
-              completedAt: !phase.completed ? new Date().toISOString() : null,
-            }
-          : phase
-      )
-      // Atualizar status automaticamente
-      const allDone = updatedPhases.length > 0 && updatedPhases.every(p => p.completed)
-      const anyDone = updatedPhases.some(p => p.completed)
-      let newStatus = project.status
-      if (allDone) newStatus = 'completed'
-      else if (anyDone && project.status === 'planning') newStatus = 'in_progress'
-      else if (!anyDone && project.status === 'completed') newStatus = 'in_progress'
-      return { ...project, phases: updatedPhases, status: newStatus, lastUpdate: new Date().toISOString() }
+  const toggleProjectPhase = useCallback(async (projectId, stageId) => {
+    const project = projects.find(p => p.id === projectId)
+    const stage = project?.stages?.find(s => s.id === stageId)
+    if (!stage) return
+    // Toggle: pending -> current -> completed -> pending
+    const statusOrder = ['pending', 'current', 'completed']
+    const nextIdx = (statusOrder.indexOf(stage.status) + 1) % 3
+    const newStatus = statusOrder[nextIdx]
+    const updateFn = (proj) => {
+      if (proj.id !== projectId) return proj
+      return { ...proj, stages: proj.stages.map(s => s.id === stageId ? { ...s, status: newStatus } : s) }
     }
-    setProjects(prev => prev.map(updateProject))
-    setSelectedProject(prev => prev ? updateProject(prev) : prev)
-  }, [])
+    setProjects(prev => prev.map(updateFn))
+    setSelectedProject(prev => prev ? updateFn(prev) : prev)
+    try {
+      await fetch(`${API_URL}/stages/${stageId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      })
+    } catch (err) { console.error('Sync error:', err) }
+  }, [projects])
 
-  const removeProjectPhase = useCallback((projectId, phaseId) => {
-    const updateProject = (project) => {
+  const removeProjectPhase = useCallback(async (projectId, stageId) => {
+    const updateFn = (project) => {
       if (project.id !== projectId) return project
-      return {
-        ...project,
-        phases: project.phases.filter(p => p.id !== phaseId),
-        lastUpdate: new Date().toISOString(),
-      }
+      return { ...project, stages: project.stages.filter(s => s.id !== stageId) }
     }
-    setProjects(prev => prev.map(updateProject))
-    setSelectedProject(prev => prev ? updateProject(prev) : prev)
+    setProjects(prev => prev.map(updateFn))
+    setSelectedProject(prev => prev ? updateFn(prev) : prev)
+    try {
+      await fetch(`${API_URL}/stages/${stageId}`, { method: 'DELETE' })
+    } catch (err) { console.error('Sync error:', err) }
   }, [])
 
   const addProjectUpdate = useCallback((projectId, text) => {
@@ -1396,10 +1790,13 @@ function App() {
     setSelectedProject(prev => prev ? updateProject(prev) : prev)
   }, [])
 
-  const deleteProject = useCallback((projectId) => {
+  const deleteProject = useCallback(async (projectId) => {
     if (window.confirm('Excluir este projeto e todas as suas fases?')) {
       setProjects(prev => prev.filter(p => p.id !== projectId))
       setSelectedProject(null)
+      try {
+        await fetch(`${API_URL}/projects/${projectId}`, { method: 'DELETE' })
+      } catch (err) { console.error('Sync error:', err) }
     }
   }, [])
 
@@ -1425,25 +1822,28 @@ function App() {
     setEditProjectDueDate('')
   }, [])
 
-  const saveEditProject = useCallback(() => {
+  const saveEditProject = useCallback(async () => {
     if (!editingProject || !editProjectName.trim()) return
-    const updateProject = (project) => {
-      if (project.id !== editingProject.id) return project
-      return {
-        ...project,
-        name: editProjectName.trim(),
-        client: editProjectClient.trim(),
-        description: editProjectDescription.trim(),
-        color: editProjectColor,
-        status: editProjectStatus,
-        startDate: editProjectStartDate || null,
-        dueDate: editProjectDueDate || null,
-        lastUpdate: new Date().toISOString(),
-      }
+    const updates = {
+      name: editProjectName.trim(),
+      description: editProjectDescription.trim(),
+      color: editProjectColor,
+      status: editProjectStatus
     }
-    setProjects(prev => prev.map(updateProject))
-    setSelectedProject(prev => prev ? updateProject(prev) : prev)
+    const updateFn = (project) => {
+      if (project.id !== editingProject.id) return project
+      return { ...project, ...updates }
+    }
+    setProjects(prev => prev.map(updateFn))
+    setSelectedProject(prev => prev ? updateFn(prev) : prev)
     closeEditProject()
+    try {
+      await fetch(`${API_URL}/projects/${editingProject.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      })
+    } catch (err) { console.error('Sync error:', err) }
   }, [editingProject, editProjectName, editProjectClient, editProjectDescription, editProjectColor, editProjectStatus, editProjectStartDate, editProjectDueDate, closeEditProject])
 
   // ── Keyboard Shortcuts ──
@@ -1479,14 +1879,43 @@ function App() {
   }, [closeEditSheet, closeEditProject, appMode])
 
   // ── More Actions ──
-  const adicionarTarefa = () => {
+  const adicionarTarefa = async () => {
     if (!novaTarefa.trim()) return
-    setTarefas(prev => [...prev, {
-      id: Date.now(), titulo: novaTarefa, descricao: novaDescricao,
-      concluida: false, prioridade: novaPrioridade, categoria: novaCategoria,
-      dataAdicionada: new Date().toISOString(), dataEntrega: novaDataEntrega || null,
-      subtarefas: [], totalWorkedSeconds: 0,
-    }])
+    try {
+      const res = await fetch(`${API_URL}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titulo: novaTarefa,
+          descricao: novaDescricao,
+          prioridade: novaPrioridade,
+          categoria: novaCategoria,
+          dataEntrega: novaDataEntrega || null
+        })
+      })
+      if (!res.ok) throw new Error('Erro ao criar tarefa')
+      const newTask = await res.json()
+      setTarefas(prev => [...prev, {
+        id: newTask.id,
+        titulo: newTask.titulo,
+        descricao: newTask.descricao || '',
+        concluida: false,
+        prioridade: newTask.prioridade,
+        categoria: newTask.categoria,
+        dataAdicionada: newTask.data_adicionada,
+        dataEntrega: newTask.data_entrega,
+        subtarefas: [],
+        totalWorkedSeconds: 0,
+      }])
+    } catch (err) {
+      // Fallback local
+      setTarefas(prev => [...prev, {
+        id: Date.now(), titulo: novaTarefa, descricao: novaDescricao,
+        concluida: false, prioridade: novaPrioridade, categoria: novaCategoria,
+        dataAdicionada: new Date().toISOString(), dataEntrega: novaDataEntrega || null,
+        subtarefas: [], totalWorkedSeconds: 0,
+      }])
+    }
     setNovaTarefa(''); setNovaDescricao(''); setNovaPrioridade('media'); setNovaCategoria('geral'); setNovaDataEntrega(''); setShowAddSheet(false)
   }
 
@@ -1662,8 +2091,160 @@ function App() {
               </div>
             )}
 
-            {/* ══════════ CONTENT (CHECKLIST ou ROADMAP) ══════════ */}
-            {appMode === 'checklist' ? (
+            {/* ══════════ CONTENT (CHECKLIST, ROADMAP ou MONITOR) ══════════ */}
+            {activeTab === 'monitor' ? (
+              /* ══════════ MONITOR PAGE ══════════ */
+              <motion.div
+                key="monitor-page"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(16px,3vw,24px)' }}
+              >
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h2 style={{ fontSize: 'clamp(20px,4vw,28px)', fontWeight: 800, color: 'hsl(0,0%,95%)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Activity size={24} style={{ color: 'hsl(200,80%,55%)' }} /> Monitor de Tokens
+                  </h2>
+                  <button
+                    onClick={fetchMonitorData}
+                    disabled={monitorLoading}
+                    style={{
+                      background: 'hsla(0,0%,100%,0.06)',
+                      border: '1px solid hsla(0,0%,100%,0.1)',
+                      borderRadius: '12px',
+                      padding: '10px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      color: 'hsl(200,80%,55%)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <RefreshCw size={14} className={monitorLoading ? 'spin' : ''} />
+                    Atualizar
+                  </button>
+                </div>
+
+                {/* Loading */}
+                {monitorLoading && !monitorData && (
+                  <div className="card-surface" style={{ borderRadius: '20px', padding: '60px 24px', textAlign: 'center' }}>
+                    <RefreshCw size={32} className="spin" style={{ color: 'hsl(200,80%,55%)', marginBottom: '16px' }} />
+                    <p style={{ color: 'hsl(0,0%,50%)', fontSize: '14px' }}>Carregando dados...</p>
+                  </div>
+                )}
+
+                {/* Error */}
+                {monitorError && (
+                  <div className="card-surface" style={{ borderRadius: '20px', padding: '40px 24px', textAlign: 'center', borderColor: 'hsla(0,60%,50%,0.2)' }}>
+                    <AlertTriangle size={32} style={{ color: 'hsl(0,60%,55%)', marginBottom: '16px' }} />
+                    <p style={{ color: 'hsl(0,60%,55%)', fontSize: '14px', fontWeight: 600 }}>Erro ao carregar</p>
+                    <p style={{ color: 'hsl(0,0%,45%)', fontSize: '12px', marginTop: '8px' }}>{monitorError}</p>
+                  </div>
+                )}
+
+                {/* Data */}
+                {monitorData && (
+                  <>
+                    {/* Uso 5 horas - Card Grande */}
+                    <div className="card-surface" style={{ borderRadius: '20px', padding: 'clamp(20px,4vw,28px)', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                        <div>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'hsl(0,0%,50%)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Uso 5 Horas
+                          </span>
+                          <div style={{ fontSize: 'clamp(36px,8vw,48px)', fontWeight: 900, color: monitorData.five_hour?.utilization >= 80 ? 'hsl(0,70%,55%)' : monitorData.five_hour?.utilization >= 50 ? 'hsl(45,100%,50%)' : 'hsl(140,60%,50%)', lineHeight: 1 }}>
+                            {monitorData.five_hour?.utilization || 0}%
+                          </div>
+                        </div>
+                        <Clock size={28} style={{ color: 'hsl(24,100%,55%)', opacity: 0.5 }} />
+                      </div>
+                      <div style={{ width: '100%', height: '12px', borderRadius: '999px', background: 'hsla(0,0%,100%,0.08)', overflow: 'hidden' }}>
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${monitorData.five_hour?.utilization || 0}%` }}
+                          transition={{ duration: 1, ease: 'easeOut' }}
+                          style={{
+                            height: '100%', borderRadius: '999px',
+                            background: monitorData.five_hour?.utilization >= 80
+                              ? 'linear-gradient(90deg, hsl(0,70%,45%), hsl(0,70%,55%))'
+                              : monitorData.five_hour?.utilization >= 50
+                                ? 'linear-gradient(90deg, hsl(45,100%,45%), hsl(45,100%,55%))'
+                                : 'linear-gradient(90deg, hsl(24,100%,45%), hsl(24,100%,55%))'
+                          }}
+                        />
+                      </div>
+                      {monitorData.five_hour?.resets_at && (
+                        <p style={{ fontSize: '12px', color: 'hsl(0,0%,45%)', marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Timer size={12} /> Reseta às {new Date(monitorData.five_hour.resets_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Uso 7 dias - Card Grande */}
+                    <div className="card-surface" style={{ borderRadius: '20px', padding: 'clamp(20px,4vw,28px)', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                        <div>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'hsl(0,0%,50%)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Uso 7 Dias
+                          </span>
+                          <div style={{ fontSize: 'clamp(36px,8vw,48px)', fontWeight: 900, color: monitorData.seven_day?.utilization >= 80 ? 'hsl(0,70%,55%)' : monitorData.seven_day?.utilization >= 50 ? 'hsl(45,100%,50%)' : 'hsl(140,60%,50%)', lineHeight: 1 }}>
+                            {monitorData.seven_day?.utilization || 0}%
+                          </div>
+                        </div>
+                        <Calendar size={28} style={{ color: 'hsl(200,80%,55%)', opacity: 0.5 }} />
+                      </div>
+                      <div style={{ width: '100%', height: '12px', borderRadius: '999px', background: 'hsla(0,0%,100%,0.08)', overflow: 'hidden' }}>
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${monitorData.seven_day?.utilization || 0}%` }}
+                          transition={{ duration: 1, ease: 'easeOut' }}
+                          style={{
+                            height: '100%', borderRadius: '999px',
+                            background: monitorData.seven_day?.utilization >= 80
+                              ? 'linear-gradient(90deg, hsl(0,70%,45%), hsl(0,70%,55%))'
+                              : monitorData.seven_day?.utilization >= 50
+                                ? 'linear-gradient(90deg, hsl(45,100%,45%), hsl(45,100%,55%))'
+                                : 'linear-gradient(90deg, hsl(200,80%,45%), hsl(200,80%,55%))'
+                          }}
+                        />
+                      </div>
+                      {monitorData.seven_day?.resets_at && (
+                        <p style={{ fontSize: '12px', color: 'hsl(0,0%,45%)', marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Timer size={12} /> Reseta {new Date(monitorData.seven_day.resets_at).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })} às {new Date(monitorData.seven_day.resets_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Extra usage */}
+                    {monitorData.extra_usage?.is_enabled && (
+                      <div className="card-surface" style={{ borderRadius: '20px', padding: '20px', background: 'hsla(140,60%,50%,0.05)', borderColor: 'hsla(140,60%,50%,0.15)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'hsl(140,60%,50%)' }} />
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'hsl(140,60%,55%)' }}>
+                              Uso Extra Ativo
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '14px', fontWeight: 600, color: 'hsl(0,0%,60%)' }}>
+                            {monitorData.extra_usage.currency} {monitorData.extra_usage.used_credits?.toFixed(2) || '0.00'} / {monitorData.extra_usage.monthly_limit}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Info card */}
+                    <div style={{ padding: '16px', background: 'hsla(0,0%,100%,0.02)', borderRadius: '12px', border: '1px solid hsla(0,0%,100%,0.05)' }}>
+                      <p style={{ fontSize: '11px', color: 'hsl(0,0%,40%)', textAlign: 'center' }}>
+                        Dados atualizados a cada 5 minutos via monitor.centralraposa.com
+                      </p>
+                    </div>
+                  </>
+                )}
+              </motion.div>
+            ) : appMode === 'checklist' ? (
               /* ══════════ TASK LIST ══════════ */
               <Reorder.Group
                 axis="y"
@@ -1803,8 +2384,8 @@ function App() {
             }}>
             {appMode === 'roadmap' ? <Route size={22} /> : <Plus size={22} />}
           </motion.button>
-          <button className={`pill-nav-btn ${showNotesSheet ? 'active' : ''}`} onClick={() => setShowNotesSheet(p => !p)}>
-            <StickyNote size={20} /><span>Notas</span>
+          <button className={`pill-nav-btn ${activeTab === 'monitor' ? 'active' : ''}`} onClick={() => setActiveTab('monitor')}>
+            <Activity size={20} /><span>Monitor</span>
           </button>
           <button className="pill-nav-btn" onClick={() => setShowMoreSheet(true)}>
             <MoreHorizontal size={20} /><span>Mais</span>
@@ -1864,30 +2445,6 @@ function App() {
                   <Plus size={18} /> Adicionar
                 </motion.button>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* ══════════ NOTES SHEET ══════════ */}
-      <AnimatePresence>
-        {showNotesSheet && (
-          <>
-            <motion.div className="bottom-sheet-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNotesSheet(false)} />
-            <motion.div className="bottom-sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              style={{ maxHeight: '70vh' }}>
-              <div className="bottom-sheet-handle" />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h2 style={{ fontSize: 'clamp(18px,3vw,22px)', fontWeight: 800, color: 'hsl(0,0%,95%)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <StickyNote size={20} style={{ color: 'hsl(45,100%,55%)' }} /> Notas Rápidas
-                </h2>
-                <button onClick={() => setShowNotesSheet(false)} style={{ background: 'hsla(0,0%,100%,0.06)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'hsl(0,0%,50%)' }}>
-                  <X size={16} />
-                </button>
-              </div>
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Escreva suas notas aqui... Ideias, lembretes, links..."
-                className="input-glass" style={{ resize: 'none', minHeight: '200px', fontSize: 'clamp(13px,1.6vw,14px)', lineHeight: 1.6 }} rows={8} autoFocus />
-              <p style={{ fontSize: '11px', color: 'hsl(0,0%,35%)', marginTop: '8px', textAlign: 'center' }}>Salvo automaticamente</p>
             </motion.div>
           </>
         )}
@@ -2008,7 +2565,7 @@ function App() {
                 {[
                   { keys: 'Cmd + N', desc: 'Nova tarefa' },
                   { keys: 'Cmd + F', desc: 'Buscar' },
-                  { keys: 'Cmd + K', desc: 'Notas rápidas' },
+                  { keys: 'Cmd + K', desc: 'Monitor de tokens' },
                   { keys: '?', desc: 'Mostrar atalhos' },
                   { keys: 'Esc', desc: 'Fechar painel' },
                   { keys: 'Hold +', desc: 'Alternar modo' },

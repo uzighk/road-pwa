@@ -94,6 +94,41 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* ═══ Mobile Keyboard & Safe Areas ═══ */
+html {
+  /* Prevent zoom on input focus (iOS) */
+  -webkit-text-size-adjust: 100%;
+}
+
+@supports (height: 100dvh) {
+  html, body, #root {
+    height: 100dvh; /* Dynamic viewport height - adjusts with keyboard */
+  }
+}
+
+/* Prevent pull-to-refresh on PWA */
+body {
+  overscroll-behavior-y: contain;
+}
+
+/* Ensure inputs don't zoom on focus (iOS) */
+input, textarea, select {
+  font-size: 16px !important; /* Prevents iOS zoom */
+}
+
+/* Hide keyboard done bar overlap */
+.keyboard-visible .pill-nav {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Drag state */
+.dragging {
+  z-index: 50 !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+}
+
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
@@ -432,4 +467,13 @@ button:focus:not(:focus-visible) {
   background: hsl(200, 80%, 50%, 0.12);
   color: hsl(200, 80%, 65%);
   border: 1px solid hsl(200, 80%, 50%, 0.2);
+}
+
+/* ═══ Spin Animation ═══ */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 1s linear infinite;
 }
