@@ -1901,18 +1901,22 @@ function App() {
       })
       if (!res.ok) throw new Error('Erro ao criar tarefa')
       const newTask = await res.json()
-      setTarefas(prev => [...prev, {
-        id: newTask.id,
-        titulo: newTask.titulo,
-        descricao: newTask.descricao || '',
-        concluida: false,
-        prioridade: newTask.prioridade,
-        categoria: newTask.categoria,
-        dataAdicionada: newTask.data_adicionada,
-        dataEntrega: newTask.data_entrega,
-        subtarefas: [],
-        totalWorkedSeconds: 0,
-      }])
+      setTarefas(prev => {
+        // Evitar duplicata se WebSocket já adicionou
+        if (prev.find(t => t.id === newTask.id)) return prev
+        return [...prev, {
+          id: newTask.id,
+          titulo: newTask.titulo,
+          descricao: newTask.descricao || '',
+          concluida: false,
+          prioridade: newTask.prioridade,
+          categoria: newTask.categoria,
+          dataAdicionada: newTask.data_adicionada,
+          dataEntrega: newTask.data_entrega,
+          subtarefas: [],
+          totalWorkedSeconds: 0,
+        }]
+      })
     } catch (err) {
       // Fallback local
       setTarefas(prev => [...prev, {
