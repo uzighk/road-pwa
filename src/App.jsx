@@ -1997,7 +1997,7 @@ function App() {
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '24px', background: 'linear-gradient(to bottom, hsl(0,0%,6%), transparent)', zIndex: 10, pointerEvents: 'none', opacity: scrollState.top ? 0 : 1, transition: 'opacity 0.3s' }} />
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', background: 'linear-gradient(to top, hsl(0,0%,6%), transparent)', zIndex: 10, pointerEvents: 'none', opacity: scrollState.bottom ? 0 : 1, transition: 'opacity 0.3s' }} />
 
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: 'clamp(16px,4vw,32px) clamp(12px,3vw,24px)', paddingBottom: 'clamp(110px,16vh,160px)', WebkitOverflowScrolling: 'touch' }}>
+        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: 'clamp(16px,4vw,32px) clamp(12px,3vw,24px)', paddingTop: 'max(env(safe-area-inset-top, 0px), clamp(16px,4vw,32px))', paddingBottom: 'clamp(110px,16vh,160px)', WebkitOverflowScrolling: 'touch' }}>
           <div style={{ maxWidth: '720px', margin: '0 auto', width: '100%' }}>
 
             {/* ══════════ HEADER ══════════ */}
