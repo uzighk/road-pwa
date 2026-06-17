@@ -1397,22 +1397,34 @@ function App() {
   }, [appMode])
 
   // ── Monitor fetch (quando abre a sheet) ──
-  const fetchMonitorData = useCallback(async (retryCount = 0) => {
+  const fetchMonitorData = useCallback(async (retryCount = 0, forceRefresh = false) => {
     setMonitorLoading(true)
     if (retryCount === 0) setMonitorError(null)
     try {
+      // Se forceRefresh ou Tauri (desktop), tenta trigger local primeiro
+      if (forceRefresh || window.__TAURI__) {
+        try {
+          await fetch('http://127.0.0.1:9876/trigger', { signal: AbortSignal.timeout(5000) })
+          await new Promise(r => setTimeout(r, 500)) // Pequeno delay pro VPS receber
+        } catch { /* ignora se não conseguir - continua buscando do VPS */ }
+      }
+
       const res = await fetch('https://monitor.centralraposa.com/usage', {
-        signal: AbortSignal.timeout(15000) // 15s timeout
+        signal: AbortSignal.timeout(15000)
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
       if (json.error) {
-        // Se for erro de token, tentar novamente depois de um delay
-        if (json.error.includes('Token') && retryCount < 2) {
-          setTimeout(() => fetchMonitorData(retryCount + 1), 2000)
-          return
+        // Se dados desatualizados, tenta trigger local e retry
+        if (json.error.includes('desatualizado') && retryCount < 1) {
+          try {
+            await fetch('http://127.0.0.1:9876/trigger', { signal: AbortSignal.timeout(5000) })
+            await new Promise(r => setTimeout(r, 1000))
+            setTimeout(() => fetchMonitorData(retryCount + 1), 500)
+            return
+          } catch { /* continua com erro */ }
         }
-        throw new Error(json.error === 'Token refresh failed' ? 'Sessão expirada no monitor. Tente novamente.' : json.error)
+        throw new Error(json.error)
       }
       setMonitorData(json.data)
       setMonitorError(null)
@@ -2116,7 +2128,7 @@ function App() {
                     <Activity size={24} style={{ color: 'hsl(200,80%,55%)' }} /> Monitor de Tokens
                   </h2>
                   <button
-                    onClick={fetchMonitorData}
+                    onClick={() => fetchMonitorData(0, true)}
                     disabled={monitorLoading}
                     style={{
                       background: 'hsla(0,0%,100%,0.06)',

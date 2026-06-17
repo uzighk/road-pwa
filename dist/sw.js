@@ -1,4 +1,4 @@
-const CACHE_NAME = 'road-companion-v4';
+const CACHE_NAME = 'road-companion-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
